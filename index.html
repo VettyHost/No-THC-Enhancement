@@ -64,7 +64,7 @@
             background-color: #fdfdfd;
         }
         .items-expand-area.open {
-            max-height: 500px; /* High enough to contain items */
+            max-height: 500px;
             padding-bottom: 1rem;
         }
         .chevron-icon {
@@ -127,13 +127,29 @@
             }
         };
 
+        const TITERS_DATA = {
+            "Blood Draw Collection": { price: "$ 6.93", order: 200 },
+            "Hep B Surface Antibody (HBsAb)": { price: "$ 6.93", order: 201 },
+            "Hep B Surface Antigen (HBsAG)": { price: "$ 6.93", order: 202 },
+            "Hepatitis B Surface Antibody, Qualitative_DNU": { price: "$ 6.93", order: 203 },
+            "MMR Titer": { price: "$ 6.93", order: 204 },
+            "QuantiFERON-TB Gold": { price: "$ 6.93", order: 205 },
+            "Titer 24nov": { price: "$ 6.93", order: 206 }
+        };
+
+        const VACCINES_DATA = {
+            "Flu Vaccine": { price: "$ 7.04", order: 300 },
+            "MMR Vaccine": { price: "$ 7.04", order: 301 },
+            "TDAP Vaccine": { price: "$ 7.04", order: 302 }
+        };
+
         function normalizeString(str) {
             return str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
         }
 
         let searchInput, thcToggle;
         let selectedPanelName = null;
-        let expandedPanelNames = new Set(); // Track multiple expanded sections if desired
+        let expandedPanelNames = new Set();
         let isNoMarijuana = false;
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -166,20 +182,20 @@
             renderCurrentResults();
         }
 
-        let lastStandardResults = [];
-        let lastInstantResults = [];
+        let results = { drug: [], instant: [], titers: [], vaccines: [] };
 
         function filterDrugList() {
             const rawQuery = searchInput.value.trim();
             const queryParts = rawQuery.split(/[,\s]+/).filter(p => p.length > 0).map(p => normalizeString(p));
 
-            const processSection = (data) => {
-                const results = [];
+            const processSection = (data, applyTHCFilter = false) => {
+                const out = [];
                 for (const name in data) {
                     const panel = data[name];
-                    const normalizedItems = panel.items.map(i => normalizeString(i));
+                    const normalizedItems = panel.items ? panel.items.map(i => normalizeString(i)) : [];
 
-                    if (isNoMarijuana) {
+                    // Apply No Marijuana only to specified sections
+                    if (applyTHCFilter && isNoMarijuana) {
                         const hasTHC = normalizedItems.some(item => item.includes('marijuana') || item.includes('thc'));
                         if (hasTHC) continue;
                     }
@@ -191,13 +207,16 @@
                         });
                         if (!allPartsMatch) continue;
                     }
-                    results.push(name);
+                    out.push(name);
                 }
-                return results.sort((a, b) => data[a].order - data[b].order);
+                return out.sort((a, b) => data[a].order - data[b].order);
             };
 
-            lastStandardResults = processSection(DRUG_PANELS_DATA);
-            lastInstantResults = processSection(INSTANT_DRUGS_DATA);
+            results.drug = processSection(DRUG_PANELS_DATA, true);
+            results.instant = processSection(INSTANT_DRUGS_DATA, true);
+            results.titers = processSection(TITERS_DATA, false);
+            results.vaccines = processSection(VACCINES_DATA, false);
+
             renderCurrentResults();
         }
 
@@ -205,30 +224,29 @@
             const container = document.getElementById('mainContentContainer');
             container.innerHTML = '';
 
-            // Section: Drugs
-            const sHeader = document.createElement('div');
-            sHeader.className = 'p-4 pt-2 bg-white sticky top-0 z-10 border-b border-gray-50';
-            sHeader.innerHTML = `<h2 class="text-xs font-bold text-gray-900 uppercase tracking-wider">Drug (${lastStandardResults.length})</h2>`;
-            container.appendChild(sHeader);
+            const sections = [
+                { title: `Drug (${results.drug.length})`, names: results.drug, data: DRUG_PANELS_DATA, expandable: true },
+                { title: `Instant Drugs (${results.instant.length})`, names: results.instant, data: INSTANT_DRUGS_DATA, expandable: true },
+                { title: `Titers (${results.titers.length})`, names: results.titers, data: TITERS_DATA, expandable: false },
+                { title: `Vaccines (${results.vaccines.length})`, names: results.vaccines, data: VACCINES_DATA, expandable: false }
+            ];
 
-            const sList = document.createElement('div');
-            sList.className = 'bg-white divide-y divide-gray-100 mb-4';
-            lastStandardResults.forEach(name => sList.appendChild(createItemNode(name, DRUG_PANELS_DATA[name])));
-            container.appendChild(sList);
+            sections.forEach(sec => {
+                if (sec.names.length === 0 && searchInput.value === "") return; // Skip if empty unless searching
+                
+                const header = document.createElement('div');
+                header.className = 'p-4 pt-2 bg-white sticky top-0 z-10 border-b border-gray-50';
+                header.innerHTML = `<h2 class="text-[11px] font-bold text-gray-900 uppercase tracking-wider">${sec.title}</h2>`;
+                container.appendChild(header);
 
-            // Section: Instant Drugs
-            const iHeader = document.createElement('div');
-            iHeader.className = 'p-4 pt-2 bg-white sticky top-0 z-10 border-b border-gray-50';
-            iHeader.innerHTML = `<h2 class="text-xs font-bold text-gray-900 uppercase tracking-wider">Instant Drugs (${lastInstantResults.length})</h2>`;
-            container.appendChild(iHeader);
-
-            const iList = document.createElement('div');
-            iList.className = 'bg-white divide-y divide-gray-100';
-            lastInstantResults.forEach(name => iList.appendChild(createItemNode(name, INSTANT_DRUGS_DATA[name])));
-            container.appendChild(iList);
+                const list = document.createElement('div');
+                list.className = 'bg-white divide-y divide-gray-100 mb-2';
+                sec.names.forEach(name => list.appendChild(createItemNode(name, sec.data[name], sec.expandable)));
+                container.appendChild(list);
+            });
         }
 
-        function createItemNode(panelName, data) {
+        function createItemNode(panelName, data, expandable) {
             const isSelected = panelName === selectedPanelName;
             const isExpanded = expandedPanelNames.has(panelName);
             
@@ -237,40 +255,46 @@
             
             const itemRow = document.createElement('div');
             itemRow.className = `drug-item flex items-center justify-between p-4 ${isExpanded ? 'bg-blue-50/30' : ''}`;
-            itemRow.onclick = () => toggleExpand(panelName);
+            if (expandable) {
+                itemRow.onclick = () => toggleExpand(panelName);
+            } else {
+                itemRow.onclick = (e) => handleDirectSelection(panelName, e);
+            }
 
             itemRow.innerHTML = `
                 <div class="flex items-center space-x-3 cursor-pointer" onclick="handleDirectSelection('${panelName}', event)">
                     <div class="w-4 h-4 rounded-full border ${isSelected ? 'border-primary-blue bg-primary-blue flex items-center justify-center' : 'border-gray-300 bg-white'} transition-colors">
                         ${isSelected ? '<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7"></path></svg>' : ''}
                     </div>
-                    <span class="text-sm font-medium text-gray-800">${panelName}</span>
+                    <span class="text-xs font-medium text-gray-800">${panelName}</span>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <span class="text-xs text-gray-500 font-semibold">${data.price}</span>
-                    <svg class="chevron-icon w-4 h-4 text-primary-blue ${isExpanded ? 'rotated' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                    </svg>
+                    <span class="text-[11px] text-primary-blue font-bold">${data.price}</span>
+                    ${expandable ? `
+                        <svg class="chevron-icon w-4 h-4 text-primary-blue ${isExpanded ? 'rotated' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    ` : '<div class="w-4 h-4"></div>'}
                 </div>
             `;
 
-            const expandArea = document.createElement('div');
-            expandArea.className = `items-expand-area ${isExpanded ? 'open' : ''}`;
-            
-            // Build the 2-column grid for substance items
-            const itemsGrid = document.createElement('div');
-            itemsGrid.className = 'grid grid-cols-2 gap-x-4 gap-y-2 px-11 py-2';
-            
-            data.items.forEach(substance => {
-                const sItem = document.createElement('div');
-                sItem.className = 'text-[11px] text-gray-500 flex items-center space-x-2';
-                sItem.innerHTML = `<span class="w-1 h-1 rounded-full bg-gray-300"></span><span class="truncate">${substance}</span>`;
-                itemsGrid.appendChild(sItem);
-            });
-
-            expandArea.appendChild(itemsGrid);
-            wrapper.appendChild(itemRow);
-            wrapper.appendChild(expandArea);
+            if (expandable) {
+                const expandArea = document.createElement('div');
+                expandArea.className = `items-expand-area ${isExpanded ? 'open' : ''}`;
+                const itemsGrid = document.createElement('div');
+                itemsGrid.className = 'grid grid-cols-2 gap-x-4 gap-y-2 px-11 py-2';
+                data.items.forEach(substance => {
+                    const sItem = document.createElement('div');
+                    sItem.className = 'text-[10px] text-gray-500 flex items-center space-x-2';
+                    sItem.innerHTML = `<span class="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0"></span><span class="truncate">${substance}</span>`;
+                    itemsGrid.appendChild(sItem);
+                });
+                expandArea.appendChild(itemsGrid);
+                wrapper.appendChild(itemRow);
+                wrapper.appendChild(expandArea);
+            } else {
+                wrapper.appendChild(itemRow);
+            }
             
             return wrapper;
         }
@@ -283,16 +307,16 @@
                 const header = document.querySelector('.header-box');
                 canvas.width = header.clientWidth;
                 canvas.height = header.clientHeight;
-                dots = Array.from({length: 15}, () => ({
+                dots = Array.from({length: 12}, () => ({
                     x: Math.random() * canvas.width,
                     y: Math.random() * canvas.height,
-                    vx: (Math.random() - 0.5) * 0.1,
-                    vy: (Math.random() - 0.5) * 0.1
+                    vx: (Math.random() - 0.5) * 0.08,
+                    vy: (Math.random() - 0.5) * 0.08
                 }));
             }
             function animate() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = 'rgba(37, 99, 235, 0.3)';
+                ctx.fillStyle = 'rgba(37, 99, 235, 0.25)';
                 dots.forEach(d => {
                     d.x += d.vx; d.y += d.vy;
                     if(d.x < 0 || d.x > canvas.width) d.vx *= -1;
@@ -308,7 +332,7 @@
     </script>
 </head>
 <body>
-    <div class="panel-container flex flex-col h-[600px]">
+    <div class="panel-container flex flex-col h-[650px]">
         <!-- Header -->
         <header class="header-box relative p-4 border-b border-gray-100 flex-shrink-0">
             <canvas id="headerCanvas"></canvas> 
@@ -339,7 +363,7 @@
             </div>
 
             <div class="relative">
-                <input type="text" id="searchInput" placeholder="Search drug names or substances..." 
+                <input type="text" id="searchInput" placeholder="Search screening items..." 
                        class="w-full py-1.5 pl-3 pr-8 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-blue focus:border-primary-blue text-gray-700 placeholder:text-gray-300">
                 <div class="absolute inset-y-0 right-3 flex items-center pointer-events-none">
                     <svg class="h-3.5 w-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
