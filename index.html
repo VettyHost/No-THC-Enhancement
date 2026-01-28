@@ -148,7 +148,8 @@
         }
 
         let searchInput, thcToggle;
-        let selectedPanelName = null;
+        let selectedPanelName = null; // For single select (Drug/Instant)
+        let selectedMultiSet = new Set(); // For multi select (Titers/Vaccines)
         let expandedPanelNames = new Set();
         let isNoMarijuana = false;
 
@@ -166,9 +167,19 @@
             filterDrugList();
         });
 
-        function handleDirectSelection(panelName, event) {
+        function handleDirectSelection(panelName, event, isMulti = false) {
             if (event) event.stopPropagation(); 
-            selectedPanelName = (selectedPanelName === panelName) ? null : panelName;
+            
+            if (isMulti) {
+                if (selectedMultiSet.has(panelName)) {
+                    selectedMultiSet.delete(panelName);
+                } else {
+                    selectedMultiSet.add(panelName);
+                }
+            } else {
+                selectedPanelName = (selectedPanelName === panelName) ? null : panelName;
+            }
+            
             filterDrugList();
         }
 
@@ -194,7 +205,6 @@
                     const panel = data[name];
                     const normalizedItems = panel.items ? panel.items.map(i => normalizeString(i)) : [];
 
-                    // Apply No Marijuana only to specified sections
                     if (applyTHCFilter && isNoMarijuana) {
                         const hasTHC = normalizedItems.some(item => item.includes('marijuana') || item.includes('thc'));
                         if (hasTHC) continue;
@@ -225,14 +235,14 @@
             container.innerHTML = '';
 
             const sections = [
-                { title: `Drug (${results.drug.length})`, names: results.drug, data: DRUG_PANELS_DATA, expandable: true },
-                { title: `Instant Drugs (${results.instant.length})`, names: results.instant, data: INSTANT_DRUGS_DATA, expandable: true },
-                { title: `Titers (${results.titers.length})`, names: results.titers, data: TITERS_DATA, expandable: false },
-                { title: `Vaccines (${results.vaccines.length})`, names: results.vaccines, data: VACCINES_DATA, expandable: false }
+                { title: `Drug (${results.drug.length})`, names: results.drug, data: DRUG_PANELS_DATA, expandable: true, multi: false },
+                { title: `Instant Drugs (${results.instant.length})`, names: results.instant, data: INSTANT_DRUGS_DATA, expandable: true, multi: false },
+                { title: `Titers (${results.titers.length})`, names: results.titers, data: TITERS_DATA, expandable: false, multi: true },
+                { title: `Vaccines (${results.vaccines.length})`, names: results.vaccines, data: VACCINES_DATA, expandable: false, multi: true }
             ];
 
             sections.forEach(sec => {
-                if (sec.names.length === 0 && searchInput.value === "") return; // Skip if empty unless searching
+                if (sec.names.length === 0 && searchInput.value === "") return;
                 
                 const header = document.createElement('div');
                 header.className = 'p-4 pt-2 bg-white sticky top-0 z-10 border-b border-gray-50';
@@ -241,13 +251,13 @@
 
                 const list = document.createElement('div');
                 list.className = 'bg-white divide-y divide-gray-100 mb-2';
-                sec.names.forEach(name => list.appendChild(createItemNode(name, sec.data[name], sec.expandable)));
+                sec.names.forEach(name => list.appendChild(createItemNode(name, sec.data[name], sec.expandable, sec.multi)));
                 container.appendChild(list);
             });
         }
 
-        function createItemNode(panelName, data, expandable) {
-            const isSelected = panelName === selectedPanelName;
+        function createItemNode(panelName, data, expandable, isMulti) {
+            const isSelected = isMulti ? selectedMultiSet.has(panelName) : (panelName === selectedPanelName);
             const isExpanded = expandedPanelNames.has(panelName);
             
             const wrapper = document.createElement('div');
@@ -255,15 +265,19 @@
             
             const itemRow = document.createElement('div');
             itemRow.className = `drug-item flex items-center justify-between p-4 ${isExpanded ? 'bg-blue-50/30' : ''}`;
+            
             if (expandable) {
                 itemRow.onclick = () => toggleExpand(panelName);
             } else {
-                itemRow.onclick = (e) => handleDirectSelection(panelName, e);
+                itemRow.onclick = (e) => handleDirectSelection(panelName, e, isMulti);
             }
 
+            // Square vs Circle selection icon logic
+            const selectionShape = isMulti ? 'rounded-[4px]' : 'rounded-full';
+
             itemRow.innerHTML = `
-                <div class="flex items-center space-x-3 cursor-pointer" onclick="handleDirectSelection('${panelName}', event)">
-                    <div class="w-4 h-4 rounded-full border ${isSelected ? 'border-primary-blue bg-primary-blue flex items-center justify-center' : 'border-gray-300 bg-white'} transition-colors">
+                <div class="flex items-center space-x-3 cursor-pointer" onclick="handleDirectSelection('${panelName}', event, ${isMulti})">
+                    <div class="w-4 h-4 ${selectionShape} border ${isSelected ? 'border-primary-blue bg-primary-blue flex items-center justify-center' : 'border-gray-300 bg-white'} transition-colors">
                         ${isSelected ? '<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7"></path></svg>' : ''}
                     </div>
                     <span class="text-xs font-medium text-gray-800">${panelName}</span>
