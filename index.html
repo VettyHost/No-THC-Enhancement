@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Screening Panel Selector</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        :root {
+            --primary-blue: #2563eb;
+            --light-gray: #f9fafb;
+            --border-color: #e5e7eb;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding-top: 1rem;
+            padding-bottom: 2rem;
+        }
+        .panel-container {
+            width: 100%;
+            max-width: 420px;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            position: relative;
+        }
+        .drug-item {
+            cursor: pointer;
+            transition: background-color 0.15s; 
+        }
+        .drug-item:hover {
+            background-color: #f8fafc;
+        }
+        #headerCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.1;
+            z-index: -1;
+        }
+        /* Toggle Switch Styling */
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #2563eb;
+        }
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #2563eb;
+        }
+        /* Item grid styling */
+        .items-expand-area {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease;
+            background-color: #fdfdfd;
+        }
+        .items-expand-area.open {
+            max-height: 500px; /* High enough to contain items */
+            padding-bottom: 1rem;
+        }
+        .chevron-icon {
+            transition: transform 0.2s ease;
+        }
+        .chevron-icon.rotated {
+            transform: rotate(180deg);
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-blue': '#2563eb',
+                        'light-gray': '#f9fafb',
+                    }
+                }
+            }
+        }
+
+        const DRUG_PANELS_DATA = {
+            "5 Panel Drug": {
+                price: "$4.2",
+                items: ["Amphetamines (AMP)", "Cocaine (COC)", "Marijuana (THC)", "Opiates (OPI)", "Phencyclidine (PCP)"],
+                order: 5 
+            },
+            "7 Panel Drug": {
+                price: "$4.2",
+                items: ["Amphetamines", "Barbiturates", "Benzodiazepines", "Cocaine", "Opiates", "Phencyclidine (PCP)", "Marijuana"],
+                order: 7 
+            },
+            "9 Panel Drug": { 
+                price: "$4.2",
+                items: ["Amphetamines", "Barbiturates", "Benzodiazepines", "Cocaine", "Methadone", "Methaqualone", "Opiates", "Phencyclidine (PCP)", "Propoxyphene"],
+                order: 9 
+            },
+            "10 Panel Drug": {
+                price: "$4.2",
+                items: ["Amphetamines", "Barbiturates", "Benzodiazepines", "Cocaine", "Marijuana", "Methadone", "Methaqualone", "Opiates", "Phencyclidine (PCP)", "Propoxyphene"],
+                order: 10 
+            },
+            "10 Panel Drug + Alcohol": { 
+                price: "$4.2",
+                items: ["Amphetamines", "Barbiturates", "Benzodiazepines", "Cocaine", "Marijuana", "Methadone", "Methaqualone", "Opiates", "Phencyclidine (PCP)", "Propoxyphene", "Ethanol"],
+                order: 11 
+            }
+        };
+
+        const INSTANT_DRUGS_DATA = {
+            "5 Panel Instant Drug": {
+                price: "$ 6.82",
+                items: ["Amphetamines", "Cocaine", "Marijuana", "Opiates", "Phencyclidine"],
+                order: 50
+            },
+            "10 Panel Instant Drug": {
+                price: "$ 6.82",
+                items: ["Amphetamines", "Barbiturates", "Benzodiazepines", "Cocaine", "Marijuana", "Methadone", "Methaqualone", "Opiates", "Phencyclidine", "Propoxyphene"],
+                order: 100
+            }
+        };
+
+        function normalizeString(str) {
+            return str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        }
+
+        let searchInput, thcToggle;
+        let selectedPanelName = null;
+        let expandedPanelNames = new Set(); // Track multiple expanded sections if desired
+        let isNoMarijuana = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            searchInput = document.getElementById('searchInput');
+            thcToggle = document.getElementById('thcToggle');
+
+            searchInput.addEventListener('input', filterDrugList);
+            thcToggle.addEventListener('change', (e) => {
+                isNoMarijuana = e.target.checked;
+                filterDrugList();
+            });
+
+            initializeCanvas();
+            filterDrugList();
+        });
+
+        function handleDirectSelection(panelName, event) {
+            if (event) event.stopPropagation(); 
+            selectedPanelName = (selectedPanelName === panelName) ? null : panelName;
+            filterDrugList();
+        }
+
+        function toggleExpand(panelName, event) {
+            if (event) event.stopPropagation();
+            if (expandedPanelNames.has(panelName)) {
+                expandedPanelNames.delete(panelName);
+            } else {
+                expandedPanelNames.add(panelName);
+            }
+            renderCurrentResults();
+        }
+
+        let lastStandardResults = [];
+        let lastInstantResults = [];
+
+        function filterDrugList() {
+            const rawQuery = searchInput.value.trim();
+            const queryParts = rawQuery.split(/[,\s]+/).filter(p => p.length > 0).map(p => normalizeString(p));
+
+            const processSection = (data) => {
+                const results = [];
+                for (const name in data) {
+                    const panel = data[name];
+                    const normalizedItems = panel.items.map(i => normalizeString(i));
+
+                    if (isNoMarijuana) {
+                        const hasTHC = normalizedItems.some(item => item.includes('marijuana') || item.includes('thc'));
+                        if (hasTHC) continue;
+                    }
+
+                    if (queryParts.length > 0) {
+                        const normalizedName = normalizeString(name);
+                        const allPartsMatch = queryParts.every(part => {
+                            return normalizedName.includes(part) || normalizedItems.some(item => item.includes(part));
+                        });
+                        if (!allPartsMatch) continue;
+                    }
+                    results.push(name);
+                }
+                return results.sort((a, b) => data[a].order - data[b].order);
+            };
+
+            lastStandardResults = processSection(DRUG_PANELS_DATA);
+            lastInstantResults = processSection(INSTANT_DRUGS_DATA);
+            renderCurrentResults();
+        }
+
+        function renderCurrentResults() {
+            const container = document.getElementById('mainContentContainer');
+            container.innerHTML = '';
+
+            // Section: Drugs
+            const sHeader = document.createElement('div');
+            sHeader.className = 'p-4 pt-2 bg-white sticky top-0 z-10 border-b border-gray-50';
+            sHeader.innerHTML = `<h2 class="text-xs font-bold text-gray-900 uppercase tracking-wider">Drug (${lastStandardResults.length})</h2>`;
+            container.appendChild(sHeader);
+
+            const sList = document.createElement('div');
+            sList.className = 'bg-white divide-y divide-gray-100 mb-4';
+            lastStandardResults.forEach(name => sList.appendChild(createItemNode(name, DRUG_PANELS_DATA[name])));
+            container.appendChild(sList);
+
+            // Section: Instant Drugs
+            const iHeader = document.createElement('div');
+            iHeader.className = 'p-4 pt-2 bg-white sticky top-0 z-10 border-b border-gray-50';
+            iHeader.innerHTML = `<h2 class="text-xs font-bold text-gray-900 uppercase tracking-wider">Instant Drugs (${lastInstantResults.length})</h2>`;
+            container.appendChild(iHeader);
+
+            const iList = document.createElement('div');
+            iList.className = 'bg-white divide-y divide-gray-100';
+            lastInstantResults.forEach(name => iList.appendChild(createItemNode(name, INSTANT_DRUGS_DATA[name])));
+            container.appendChild(iList);
+        }
+
+        function createItemNode(panelName, data) {
+            const isSelected = panelName === selectedPanelName;
+            const isExpanded = expandedPanelNames.has(panelName);
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex flex-col border-b border-gray-100 last:border-b-0';
+            
+            const itemRow = document.createElement('div');
+            itemRow.className = `drug-item flex items-center justify-between p-4 ${isExpanded ? 'bg-blue-50/30' : ''}`;
+            itemRow.onclick = () => toggleExpand(panelName);
+
+            itemRow.innerHTML = `
+                <div class="flex items-center space-x-3 cursor-pointer" onclick="handleDirectSelection('${panelName}', event)">
+                    <div class="w-4 h-4 rounded-full border ${isSelected ? 'border-primary-blue bg-primary-blue flex items-center justify-center' : 'border-gray-300 bg-white'} transition-colors">
+                        ${isSelected ? '<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                    </div>
+                    <span class="text-sm font-medium text-gray-800">${panelName}</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-xs text-gray-500 font-semibold">${data.price}</span>
+                    <svg class="chevron-icon w-4 h-4 text-primary-blue ${isExpanded ? 'rotated' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
+            `;
+
+            const expandArea = document.createElement('div');
+            expandArea.className = `items-expand-area ${isExpanded ? 'open' : ''}`;
+            
+            // Build the 2-column grid for substance items
+            const itemsGrid = document.createElement('div');
+            itemsGrid.className = 'grid grid-cols-2 gap-x-4 gap-y-2 px-11 py-2';
+            
+            data.items.forEach(substance => {
+                const sItem = document.createElement('div');
+                sItem.className = 'text-[11px] text-gray-500 flex items-center space-x-2';
+                sItem.innerHTML = `<span class="w-1 h-1 rounded-full bg-gray-300"></span><span class="truncate">${substance}</span>`;
+                itemsGrid.appendChild(sItem);
+            });
+
+            expandArea.appendChild(itemsGrid);
+            wrapper.appendChild(itemRow);
+            wrapper.appendChild(expandArea);
+            
+            return wrapper;
+        }
+
+        function initializeCanvas() {
+            const canvas = document.getElementById('headerCanvas');
+            const ctx = canvas.getContext('2d');
+            let dots = [];
+            function resize() {
+                const header = document.querySelector('.header-box');
+                canvas.width = header.clientWidth;
+                canvas.height = header.clientHeight;
+                dots = Array.from({length: 15}, () => ({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    vx: (Math.random() - 0.5) * 0.1,
+                    vy: (Math.random() - 0.5) * 0.1
+                }));
+            }
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'rgba(37, 99, 235, 0.3)';
+                dots.forEach(d => {
+                    d.x += d.vx; d.y += d.vy;
+                    if(d.x < 0 || d.x > canvas.width) d.vx *= -1;
+                    if(d.y < 0 || d.y > canvas.height) d.vy *= -1;
+                    ctx.beginPath(); ctx.arc(d.x, d.y, 1, 0, Math.PI*2); ctx.fill();
+                });
+                requestAnimationFrame(animate);
+            }
+            resize();
+            window.addEventListener('resize', resize);
+            animate();
+        }
+    </script>
+</head>
+<body>
+    <div class="panel-container flex flex-col h-[600px]">
+        <!-- Header -->
+        <header class="header-box relative p-4 border-b border-gray-100 flex-shrink-0">
+            <canvas id="headerCanvas"></canvas> 
+            <div class="relative flex justify-between items-center z-10">
+                <h1 class="text-base font-bold text-gray-900">Request Checks</h1>
+                <button class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-100 bg-white flex-shrink-0">
+            <div class="flex-1 p-3 text-center text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Background Screening</div>
+            <div class="flex-1 p-3 text-center text-primary-blue text-[10px] font-bold uppercase tracking-tighter border-b-2 border-primary-blue">
+                Health Screening
+            </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="p-4 pb-2 bg-white space-y-3 flex-shrink-0">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-gray-600">No Marijuana</span>
+                <div class="relative inline-block w-8 mr-2 align-middle select-none">
+                    <input type="checkbox" id="thcToggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-2 border-gray-300 appearance-none cursor-pointer outline-none transition-all duration-200 checked:right-0 checked:border-primary-blue"/>
+                    <label for="thcToggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-gray-200 cursor-pointer"></label>
+                </div>
+            </div>
+
+            <div class="relative">
+                <input type="text" id="searchInput" placeholder="Search drug names or substances..." 
+                       class="w-full py-1.5 pl-3 pr-8 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-primary-blue focus:border-primary-blue text-gray-700 placeholder:text-gray-300">
+                <div class="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                    <svg class="h-3.5 w-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main List Area -->
+        <div id="mainContentContainer" class="flex-grow overflow-y-auto">
+            <!-- Dynamic Content -->
+        </div>
+    </div>
+</body>
+</html>
